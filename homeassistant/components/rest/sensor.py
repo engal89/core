@@ -43,6 +43,7 @@ DEFAULT_FORCE_UPDATE = False
 DEFAULT_TIMEOUT = 10
 
 
+CONF_HEADERS_TEMPLATE = "headers_template"
 CONF_JSON_ATTRS = "json_attributes"
 CONF_JSON_ATTRS_PATH = "json_attributes_path"
 METHODS = ["POST", "GET"]
@@ -51,6 +52,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Exclusive(CONF_RESOURCE, CONF_RESOURCE): cv.url,
         vol.Exclusive(CONF_RESOURCE_TEMPLATE, CONF_RESOURCE): cv.template,
+        vol.Exclusive(CONF_HEADERS_TEMPLATE, CONF_HEADERS): vol.Schema(
+            {cv.string: cv.template_complex}
+        ),
         vol.Optional(CONF_AUTHENTICATION): vol.In(
             [HTTP_BASIC_AUTHENTICATION, HTTP_DIGEST_AUTHENTICATION]
         ),
@@ -87,6 +91,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     username = config.get(CONF_USERNAME)
     password = config.get(CONF_PASSWORD)
     headers = config.get(CONF_HEADERS)
+    headers_template = config.get(CONF_HEADERS_TEMPLATE)
     unit = config.get(CONF_UNIT_OF_MEASUREMENT)
     device_class = config.get(CONF_DEVICE_CLASS)
     value_template = config.get(CONF_VALUE_TEMPLATE)
@@ -109,7 +114,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             auth = HTTPBasicAuth(username, password)
     else:
         auth = None
-    rest = RestData(method, resource, auth, headers, payload, verify_ssl, timeout)
+    rest = RestData(hass, method, resource, auth, headers, headers_template, payload, verify_ssl, timeout)
     rest.update()
     if rest.data is None:
         raise PlatformNotReady
@@ -262,13 +267,15 @@ class RestData:
     """Class for handling the data retrieval."""
 
     def __init__(
-        self, method, resource, auth, headers, data, verify_ssl, timeout=DEFAULT_TIMEOUT
+        self, hass, method, resource, auth, headers, headers_template, data, verify_ssl, timeout=DEFAULT_TIMEOUT
     ):
         """Initialize the data object."""
+        self._hass = hass
         self._method = method
         self._resource = resource
         self._auth = auth
         self._headers = headers
+        self._headers_template = headers_template
         self._request_data = data
         self._verify_ssl = verify_ssl
         self._timeout = timeout
@@ -286,6 +293,10 @@ class RestData:
 
     def update(self):
         """Get the latest data from REST service with provided method."""
+
+        if self._headers_template is not None:
+            self._headers = self.get_headers_from_headers_template()
+
         _LOGGER.debug("Updating from %s", self._resource)
         try:
             response = self._http_session.request(
@@ -302,4 +313,15 @@ class RestData:
         except requests.exceptions.RequestException as ex:
             _LOGGER.error("Error fetching data: %s failed with %s", self._resource, ex)
             self.data = None
-            self.headers = None
+
+    def get_headers_from_headers_template(self):
+        """Get headers from headers template."""
+
+        headers = {}
+
+        for key, value in self._headers_template.items():
+            value.hass = self._hass
+            headers[key] = value.render()
+
+        return headers
+    
