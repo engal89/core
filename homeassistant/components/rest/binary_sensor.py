@@ -37,9 +37,14 @@ DEFAULT_NAME = "REST Binary Sensor"
 DEFAULT_VERIFY_SSL = True
 DEFAULT_TIMEOUT = 10
 
+CONF_HEADERS_TEMPLATE = "headers_template"
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_RESOURCE): cv.url,
+        vol.Exclusive(CONF_HEADERS_TEMPLATE, CONF_HEADERS): vol.Schema(
+            {cv.string: cv.template_complex}
+        ),
         vol.Optional(CONF_AUTHENTICATION): vol.In(
             [HTTP_BASIC_AUTHENTICATION, HTTP_DIGEST_AUTHENTICATION]
         ),
@@ -68,6 +73,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     username = config.get(CONF_USERNAME)
     password = config.get(CONF_PASSWORD)
     headers = config.get(CONF_HEADERS)
+    headers_template = config.get(CONF_HEADERS_TEMPLATE)
     device_class = config.get(CONF_DEVICE_CLASS)
     value_template = config.get(CONF_VALUE_TEMPLATE)
     if value_template is not None:
@@ -81,7 +87,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     else:
         auth = None
 
-    rest = RestData(method, resource, auth, headers, payload, verify_ssl, timeout)
+    rest = RestData(method, resource, auth, headers, headers_template, payload, verify_ssl, timeout)
     rest.update()
     if rest.data is None:
         raise PlatformNotReady
